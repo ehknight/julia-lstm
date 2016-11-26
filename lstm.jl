@@ -1,7 +1,7 @@
 using ArrayFire
+setBackend(AF_BACKEND_OPENCL)
 
 function rand_arr(a::Float64,b::Float64,dims::Int...)
-    srand(0)
     arr = zeros(AFArray{Float64},dims)
     rand!(arr)
     arr*(b-a)+a
