@@ -1,17 +1,24 @@
 using ArrayFire
 setBackend(AF_BACKEND_OPENCL)
 
-function rand_arr(a::Float64,b::Float64,dims::Int...)
-    arr = zeros(AFArray{Float64},dims)
-    rand!(arr)
-    arr*(b-a)+a
+const GPU_SUPPORTS_FLOAT64 = false
+if GPU_SUPPORTS_FLOAT64
+	const gpu_float = Float64
+else
+	const gpu_float = Float32
 end
 
-function sigmoid_helper(x::Float64)
+function rand_arr(a::Float64,b::Float64,dims::Int...)
+    arr = zeros(AFArray{gpu_float},dims)
+    rand!(arr)
+    arr*(Float32(b)-Float32(a))+Float32(a)
+end
+
+function sigmoid_helper(x::gpu_float)
     return 1/(1+exp(-x))
 end
 
-function sigmoid(x::Union{AFArray{Float64,1},Float64})
+function sigmoid(x::Union{AFArray{gpu_float,1},gpu_float})
     try
         return sigmoid_helper(x)
     catch
@@ -19,7 +26,7 @@ function sigmoid(x::Union{AFArray{Float64,1},Float64})
     end
 end
 
-function mat_dot(a::Union{AFArray{Float64,1},AFArray{Float64,2}},b::AFArray{Float64,1})
+function mat_dot(a::Union{AFArray{gpu_float,1},AFArray{gpu_float,2}},b::AFArray{gpu_float,1})
     try
         return dot(a,b)
     catch
@@ -27,11 +34,11 @@ function mat_dot(a::Union{AFArray{Float64,1},AFArray{Float64,2}},b::AFArray{Floa
     end
 end
 
-function outer(a::AFArray{Float64,1},b::AFArray{Float64,1})
+function outer(a::AFArray{gpu_float,1},b::AFArray{gpu_float,1})
     *(vec(a),transpose(vec(b)))
 end
 
-function dot_transpose(a::Union{AFArray{Float64,1},AFArray{Float64,2}},b::AFArray{Float64,1})
+function dot_transpose(a::Union{AFArray{gpu_float,1},AFArray{gpu_float,2}},b::AFArray{gpu_float,1})
     mat_dot(transpose(a),b)
 end
 
@@ -45,21 +52,21 @@ function LSTM_Param(mem_cell_ct::Int,x_dim::Int)
          "bi"=> rand_arr(-0.1,0.1,mem_cell_ct),
          "bf"=> rand_arr(-0.1,0.1,mem_cell_ct),
          "bo"=> rand_arr(-0.1,0.1,mem_cell_ct), 
-         "wg_diff"=> zeros(AFArray{Float64},(mem_cell_ct, concat_len)),
-         "wi_diff"=> zeros(AFArray{Float64},(mem_cell_ct, concat_len)),
-         "wf_diff"=> zeros(AFArray{Float64},(mem_cell_ct, concat_len)),
-         "wo_diff"=> zeros(AFArray{Float64},(mem_cell_ct, concat_len)),
-         "bg_diff"=> zeros(AFArray{Float64},mem_cell_ct),
-         "bi_diff"=> zeros(AFArray{Float64},mem_cell_ct),
-         "bf_diff"=> zeros(AFArray{Float64},mem_cell_ct),
-         "bo_diff"=> zeros(AFArray{Float64},mem_cell_ct),
+         "wg_diff"=> zeros(AFArray{gpu_float},(mem_cell_ct, concat_len)),
+         "wi_diff"=> zeros(AFArray{gpu_float},(mem_cell_ct, concat_len)),
+         "wf_diff"=> zeros(AFArray{gpu_float},(mem_cell_ct, concat_len)),
+         "wo_diff"=> zeros(AFArray{gpu_float},(mem_cell_ct, concat_len)),
+         "bg_diff"=> zeros(AFArray{gpu_float},mem_cell_ct),
+         "bi_diff"=> zeros(AFArray{gpu_float},mem_cell_ct),
+         "bf_diff"=> zeros(AFArray{gpu_float},mem_cell_ct),
+         "bo_diff"=> zeros(AFArray{gpu_float},mem_cell_ct),
          "concat_len"=> concat_len,
          "mem_cell_ct"=> mem_cell_ct,
          "x_dim"=> x_dim
     )
 end
 
-function apply_diff(params_dict::Dict{String,Any}, lr::Float64)
+function apply_diff(params_dict::Dict{String,Any}, lr::gpu_float)
     params = params_dict
     
     params["wg"] -= lr*params["wg_diff"]
@@ -71,29 +78,29 @@ function apply_diff(params_dict::Dict{String,Any}, lr::Float64)
     params["bf"] -= lr*params["bf_diff"]
     params["bo"] -= lr*params["bo_diff"]
 
-    params["wg_diff"] = zeros(AFArray{Float64},size(params["wg"]))
-    params["wi_diff"] = zeros(AFArray{Float64},size(params["wi"])) 
-    params["wf_diff"] = zeros(AFArray{Float64},size(params["wf"])) 
-    params["wo_diff"] = zeros(AFArray{Float64},size(params["wo"])) 
-    params["bg_diff"] = zeros(AFArray{Float64},size(params["bg"]))
-    params["bi_diff"] = zeros(AFArray{Float64},size(params["bi"])) 
-    params["bf_diff"] = zeros(AFArray{Float64},size(params["bf"])) 
-    params["bo_diff"] = zeros(AFArray{Float64},size(params["bo"])) 
+    params["wg_diff"] = zeros(AFArray{gpu_float},size(params["wg"]))
+    params["wi_diff"] = zeros(AFArray{gpu_float},size(params["wi"])) 
+    params["wf_diff"] = zeros(AFArray{gpu_float},size(params["wf"])) 
+    params["wo_diff"] = zeros(AFArray{gpu_float},size(params["wo"])) 
+    params["bg_diff"] = zeros(AFArray{gpu_float},size(params["bg"]))
+    params["bi_diff"] = zeros(AFArray{gpu_float},size(params["bi"])) 
+    params["bf_diff"] = zeros(AFArray{gpu_float},size(params["bf"])) 
+    params["bo_diff"] = zeros(AFArray{gpu_float},size(params["bo"])) 
     params
 end
 
 abstract LSTM
 
 function LSTM_state(mem_cell_ct::Int, x_dim::Int)
-    Dict("g"=> zeros(AFArray{Float64},mem_cell_ct),
-         "i"=> zeros(AFArray{Float64},mem_cell_ct),
-         "f"=> zeros(AFArray{Float64},mem_cell_ct),
-         "o"=> zeros(AFArray{Float64},mem_cell_ct),
-         "s"=> zeros(AFArray{Float64},mem_cell_ct),
-         "h"=> zeros(AFArray{Float64},mem_cell_ct),
-         "bottom_diff_h"=> zeros(AFArray{Float64},mem_cell_ct),
-         "bottom_diff_s"=> zeros(AFArray{Float64},mem_cell_ct),
-         "bottom_diff_x"=> zeros(AFArray{Float64},x_dim),
+    Dict("g"=> zeros(AFArray{gpu_float},mem_cell_ct),
+         "i"=> zeros(AFArray{gpu_float},mem_cell_ct),
+         "f"=> zeros(AFArray{gpu_float},mem_cell_ct),
+         "o"=> zeros(AFArray{gpu_float},mem_cell_ct),
+         "s"=> zeros(AFArray{gpu_float},mem_cell_ct),
+         "h"=> zeros(AFArray{gpu_float},mem_cell_ct),
+         "bottom_diff_h"=> zeros(AFArray{gpu_float},mem_cell_ct),
+         "bottom_diff_s"=> zeros(AFArray{gpu_float},mem_cell_ct),
+         "bottom_diff_x"=> zeros(AFArray{gpu_float},x_dim),
          "mem_cell_ct"=> mem_cell_ct,
          "x_dim"=> x_dim)
 end
@@ -101,18 +108,18 @@ end
 type LSTM_Node <: LSTM
     param::Dict{String,Any}
     state::Dict{String,Any}
-    x::AFArray{Float64,1}
-    xc::AFArray{Float64,1}
-    s_prev::AFArray{Float64,1}
-    h_prev::AFArray{Float64,1}
+    x::Union{AFArray{gpu_float,1},Void}
+    xc::Union{AFArray{gpu_float,1},Void}
+    s_prev::Union{AFArray{gpu_float,1},Void}
+    h_prev::Union{AFArray{gpu_float,1},Void}
 end
 
-function bottom_data_is(self::LSTM_Node,x::AFArray{Float64,1},s_prev=nothing::Union{typeof(nothing),AFArray},h_prev=nothing::Union{typeof(nothing),AFArray})
+function bottom_data_is(self::LSTM_Node,x::AFArray{gpu_float,1},s_prev=nothing::Union{Void,AFArray},h_prev=nothing::Union{Void,AFArray})
     if s_prev==nothing
-        s_prev = zeros(AFArray{Float64},self.state["s"])
+        s_prev = zeros(AFArray{gpu_float},self.state["s"])
     end
     if h_prev==nothing
-        h_prev = zeros(AFArray{Float64},self.state["h"])
+        h_prev = zeros(AFArray{gpu_float},self.state["h"])
     end
     self.s_prev=AFArray(vec(s_prev))
     self.h_prev=AFArray(vec(h_prev))
@@ -131,7 +138,7 @@ function bottom_data_is(self::LSTM_Node,x::AFArray{Float64,1},s_prev=nothing::Un
     LSTM_Node
 end
 
-function top_diff_is(self::LSTM_Node,top_diff_h::AFArray{Float64,1},top_diff_s::AFArray{Float64,1})
+function top_diff_is(self::LSTM_Node,top_diff_h::AFArray{gpu_float,1},top_diff_s::AFArray{gpu_float,1})
     ds  = self.state["o"].*top_diff_h+top_diff_s
     do_ = self.state["s"].*top_diff_h # underscore because do is reserved
     di  = self.state["g"].*ds
@@ -152,7 +159,7 @@ function top_diff_is(self::LSTM_Node,top_diff_h::AFArray{Float64,1},top_diff_s::
     self.param["bo_diff"] += do_input
     self.param["bg_diff"] += dg_input
     
-    dxc = zeros(AFArray{Float64},size(self.xc))
+    dxc = zeros(AFArray{gpu_float},size(self.xc))
     dxc += dot_transpose(self.param["wi"], di_input)
     dxc += dot_transpose(self.param["wf"], df_input)
     dxc += dot_transpose(self.param["wo"], do_input)
@@ -166,31 +173,31 @@ end
 type LossLayer
 end
 
-function loss_func(self::Type{LossLayer}, pred::AFArray{Float64,1}, label::Float64)
+function loss_func(self::Type{LossLayer}, pred::AFArray{gpu_float,1}, label::gpu_float)
     (pred[1]-label)^2 #squared error
 end
 
-function bottom_diff(self::Type{LossLayer}, pred::AFArray{Float64,1}, label::Float64)
-    diff = zeros(AFArray{Float64},pred)
+function bottom_diff(self::Type{LossLayer}, pred::AFArray{gpu_float,1}, label::gpu_float)
+    diff = zeros(AFArray{gpu_float},pred)
     diff[1] = 2*(pred[1]-label)
     diff
 end
 
 type LSTM_Network <: LSTM
     lstm_param::Dict{String,Any}
-    lstm_node_list::AFArray
-    x_list::AFArray
+    lstm_node_list::Array{LSTM_Node,1}
+    x_list
 end
 
 
-function y_list_is(self::LSTM_Network,y_list::AFArray{Float64,1},loss_layer::Type{LossLayer})
+function y_list_is(self::LSTM_Network,y_list::AFArray{gpu_float,1},loss_layer::Type{LossLayer})
     if length(y_list) != length(self.x_list)
         error("AssertionError: length(y_list) is not equal to length(self.x_list)")
     end
     idx = length(self.x_list)-1
     loss = loss_func(loss_layer, self.lstm_node_list[idx+1].state["h"], y_list[idx+1])
     diff_h = bottom_diff(loss_layer, self.lstm_node_list[idx+1].state["h"], y_list[idx+1])
-    diff_s = zeros(AFArray{Float64},self.lstm_param["mem_cell_ct"])
+    diff_s = zeros(AFArray{gpu_float},self.lstm_param["mem_cell_ct"])
     top_diff_is(self.lstm_node_list[idx+1],diff_h,diff_s)
     idx -= 1
     while idx >= 0
@@ -205,14 +212,14 @@ function y_list_is(self::LSTM_Network,y_list::AFArray{Float64,1},loss_layer::Typ
 end
 
 function x_list_clear(self::LSTM_Network)
-    self.x_list=[]
+	self.x_list=Array{Any}(Array{gpu_float}(1))
 end
 
-function x_list_add(self::LSTM_Network, x::AFArray{Float64,1})
+function x_list_add(self::LSTM_Network, x::AFArray{gpu_float,1})
     push!(self.x_list,x)
     if length(self.x_list) > length(self.lstm_node_list)
         lstm_state=LSTM_state(self.lstm_param["mem_cell_ct"], self.lstm_param["x_dim"])
-        push!(self.lstm_node_list, LSTM_Node(self.lstm_param,lstm_state,nothing,nothing,nothing,nothing))
+	push!(self.lstm_node_list, LSTM_Node(self.lstm_param,lstm_state,nothing,nothing,nothing,nothing))
     end
     idx = length(self.x_list) - 1
     if idx == 0
@@ -229,14 +236,15 @@ const print_after_num_iters = 50
 const iterations = 1000
 
 function run_example()
-    mem_cell_ct = 100
-    x_dim = 50
-    concat_len = x_dim + mem_cell_ct
+    const mem_cell_ct = 100
+    const x_dim = 50
+    const concat_len = x_dim + mem_cell_ct
     lstm_param = LSTM_Param(mem_cell_ct, x_dim)
-    lstm_net = LSTM_Network(lstm_param,[],[])
-    y_list = [-0.5,0.2,0.1,-0.5]
-    input_val_arr = [rand(AFArray{Float64},x_dim) for i in y_list]
-    for cur_iter in AFArray(collect(1:1:iterations))
+    lstm_net = LSTM_Network(lstm_param,Array{LSTM_Node}(1),Array{Any}(Array{gpu_float}(1)))
+    const y_list_inp = [-0.5,0.2,0.1,-0.5]
+    const y_list = AFArray{gpu_float,1}(map(gpu_float,y_list_inp))
+    input_val_arr = [AFArray(map(gpu_float,rand(x_dim))) for i in y_list]
+    for cur_iter in collect(1:1:iterations)
         print_=false 
         if cur_iter % print_after_num_iters == 1
             println("Iteration #$(cur_iter-1)")
@@ -244,6 +252,9 @@ function run_example()
         end
         for ind in collect(0:1:length(y_list)-1)
             x_list_add(lstm_net,input_val_arr[ind+1])
+	    if ind==0
+		deleteat!(lstm_net.lstm_node_list,1) # first reference is by default #undef
+	    end
             if print_
                 println("y_pred[$(ind+1)] :", lstm_net.lstm_node_list[ind+1].state["h"][1])
             end
